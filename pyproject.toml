@@ -1,0 +1,54 @@
+[project]
+name = "cosmic-neighborhoods"
+version = "0.1.0"
+description = "Connect with your personal patch of the Rubin Observatory sky"
+requires-python = ">=3.10"
+dependencies = [
+    "astropy>=6.0",
+    "astropy-healpix>=1.0",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "typer>=0.12",
+    "convertdate>=2.4",
+    "pyarrow>=16.0",
+]
+
+[project.scripts]
+cosmic = "cosmic_neighborhoods.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "B", "I", "N", "UP", "PL", "RUF"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]

@@ -2,7 +2,8 @@
 
 from pathlib import Path
 import random
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Dict, Optional
+import json
 
 import numpy as np
 import pandas as pd
@@ -10,17 +11,20 @@ from astropy_healpix import HEALPix
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 
-def extract_boundary(db_path: str | Path) -> Dict[int, float]:
-    """Extract maximum declination per RA degree from OpSim.
+def extract_boundary(db_path: str | Path) -> Dict[str, np.ndarray]:
+    """Extract RA-based declination boundaries from OpSim database.
     
-    For each integer degree of RA, find the maximum declination of any pointing
-    and add 1.75 degrees to account for the field radius.
+    Creates a compact representation of the footprint as declination
+    boundaries for each RA slice (every 0.1 degrees).
     
     Args:
         db_path: Path to OpSim SQLite database
     
     Returns:
-        Dictionary mapping RA degree (0-359) to max declination + field radius
+        Dictionary with:
+            'ra': Array of RA values (0 to 359.9, step 0.1)
+            'dec_south': Array of southern boundaries
+            'dec_north': Array of northern boundaries
     """
     # Read all unique pointings
     db_uri = f"sqlite:///{db_path}"
@@ -30,67 +34,124 @@ def extract_boundary(db_path: str | Path) -> Dict[int, float]:
     """
     pointings = pd.read_sql_query(query, db_uri)
     
-    # Round RA to nearest degree (0-359)
-    pointings['ra_deg'] = pointings['fieldRA'].round().astype(int) % 360
+    # Create RA grid (0 to 359.9, step 0.1)
+    ra_grid = np.arange(0, 360, 0.1)
     
-    # Find max dec for each RA degree and add field radius
-    boundary = pointings.groupby('ra_deg')['fieldDec'].max() + 1.75
+    # Initialize boundary arrays
+    dec_south = np.full_like(ra_grid, -90.0)  # For now, always -90
+    dec_north = np.full_like(ra_grid, -90.0)  # Will update with real values
     
-    return boundary.to_dict()
+    # Round RAs to nearest 0.1°
+    pointings['ra_bin'] = (pointings['fieldRA'] / 0.1).round() * 0.1
+    
+    # Find maximum declination for each RA bin
+    max_decs = pointings.groupby('ra_bin')['fieldDec'].max()
+    
+    # Update northern boundary (adding field radius of 1.75°)
+    for ra, dec in max_decs.items():
+        idx = int(ra * 10)  # Convert RA to array index
+        if idx < len(dec_north):
+            dec_north[idx] = dec + 1.75  # Add field radius
+    
+    # Interpolate any gaps
+    mask = dec_north > -90
+    if np.any(mask):
+        x = np.where(mask)[0]
+        y = dec_north[mask]
+        dec_north = np.interp(np.arange(len(dec_north)), x, y)
+    
+    return {
+        'ra': ra_grid,
+        'dec_south': dec_south,
+        'dec_north': dec_north,
+    }
 
-def get_rubin_pixels(
-    boundary: Dict[int, float],
-    nside: int = 128
-) -> List[int]:
-    """Get all HEALPix pixels below the OpSim boundary.
+def save_footprint_cache(
+    boundary: Dict[str, np.ndarray],
+    cache_file: str | Path,
+) -> None:
+    """Save footprint boundary data to cache file.
     
     Args:
-        boundary: Dictionary mapping RA degree to max declination
-        nside: HEALPix nside parameter
-    
-    Returns:
-        List of HEALPix pixel indices
+        boundary: Dictionary from extract_boundary()
+        cache_file: Path to save cache (will be .npz)
     """
-    hp = HEALPix(nside=nside, order='nested')
-    
-    # Get all pixel centers
-    npix = hp.npix
-    pixels = np.arange(npix)
-    lon, lat = hp.healpix_to_lonlat(pixels)
-    
-    # Convert to degrees
-    ra = lon.to_value(u.deg)
-    dec = lat.to_value(u.deg)
-    
-    # Round RA to nearest degree for boundary lookup
-    ra_deg = np.round(ra).astype(int) % 360
-    
-    # Create mask based on the boundary
-    mask = np.zeros_like(pixels, dtype=bool)
-    for i, (ra_i, dec_i) in enumerate(zip(ra_deg, dec)):
-        max_dec = boundary.get(ra_i, 2.0)  # Default to +2° if no data
-        mask[i] = dec_i <= max_dec
-    
-    # Return sorted list of pixels that match the mask
-    return sorted(pixels[mask])
+    np.savez_compressed(
+        cache_file,
+        ra=boundary['ra'],
+        dec_south=boundary['dec_south'],
+        dec_north=boundary['dec_north'],
+    )
 
-def pixel_to_radec(pixel: int, nside: int = 128) -> Tuple[float, float]:
-    """Convert HEALPix pixel to (RA, Dec) of pixel center.
+def load_footprint_cache(cache_file: str | Path) -> Dict[str, np.ndarray]:
+    """Load footprint boundary data from cache file.
     
     Args:
-        pixel: HEALPix pixel index
-        nside: HEALPix nside parameter
+        cache_file: Path to .npz cache file
     
     Returns:
-        Tuple of (RA, Dec) in degrees
+        Dictionary with ra, dec_south, dec_north arrays
     """
-    hp = HEALPix(nside=nside, order='nested')
+    with np.load(cache_file) as data:
+        return {
+            'ra': data['ra'],
+            'dec_south': data['dec_south'],
+            'dec_north': data['dec_north'],
+        }
+
+def get_dec_range_at_ra(
+    ra_deg: float,
+    boundary: Dict[str, np.ndarray],
+) -> Tuple[float, float]:
+    """Get declination range at a specific RA.
     
-    # Get longitude and latitude of pixel center
-    lon, lat = hp.healpix_to_lonlat(pixel)
+    Args:
+        ra_deg: Right ascension in degrees [0, 360)
+        boundary: Dictionary from extract_boundary() or load_footprint_cache()
     
-    # Convert to degrees
-    ra = lon.to_value(u.deg)
-    dec = lat.to_value(u.deg)
+    Returns:
+        Tuple of (south_dec, north_dec) in degrees
+    """
+    # Normalize RA to [0, 360)
+    ra = ra_deg % 360
     
-    return ra, dec
+    # Find nearest RA bin
+    idx = int(round(ra * 10))  # Convert RA to array index
+    if idx >= len(boundary['ra']):
+        idx = 0  # Wrap around at 360°
+    
+    return (
+        boundary['dec_south'][idx],
+        boundary['dec_north'][idx]
+    )
+
+# Keep these for reference/testing but not using them for main footprint
+def extract_opsim_pointings(
+    db_path: str | Path,
+    sample_size: Optional[int] = None,
+    random_seed: Optional[int] = None
+) -> pd.DataFrame:
+    """Extract unique pointings from OpSim database.
+    
+    Args:
+        db_path: Path to OpSim SQLite database
+        sample_size: If provided, return this many random pointings
+        random_seed: Random seed for reproducible sampling
+    
+    Returns:
+        DataFrame with columns 'fieldRA' and 'fieldDec'
+    """
+    # Read all unique pointings
+    db_uri = f"sqlite:///{db_path}"
+    query = """
+    SELECT DISTINCT fieldRA, fieldDec 
+    FROM observations
+    """
+    pointings = pd.read_sql_query(query, db_uri)
+    
+    if sample_size is not None:
+        if random_seed is not None:
+            random.seed(random_seed)
+        pointings = pointings.sample(n=min(sample_size, len(pointings)), random_state=random_seed)
+    
+    return pointings

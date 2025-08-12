@@ -8,47 +8,51 @@ from astropy_healpix import HEALPix
 from astropy.coordinates import SkyCoord, ICRS
 import astropy.units as u
 
+from cosmic_neighborhoods.footprint import get_dec_range_at_ra
+
 def map_latitude_to_declination(
     lat_deg: float,
+    ra_deg: float,
     pop_cdf: pd.DataFrame,
-    dec_cdf: pd.DataFrame,
+    footprint_boundary: dict,
 ) -> float:
-    """Find declination δ such that F_r(δ) = F_h(φ).
+    """Map latitude to declination at specific RA using population percentile.
     
-    Maps northern latitudes to northern declinations by matching percentiles:
-    - For latitude φ, find what percentile it is in population distribution
-    - Find the declination δ at the same percentile in Rubin footprint
+    For a given latitude φ and RA:
+    1. Find what percentile φ is in global population distribution
+    2. Get available declination range [δ_s, δ_n] at that RA
+    3. Map percentile to that range
     
     Args:
-        lat_deg: Input latitude in degrees
+        lat_deg: Input latitude in degrees [-90, 90]
+        ra_deg: Right ascension in degrees [0, 360)
         pop_cdf: Population CDF DataFrame with columns:
                 - lat_bin_center: Latitude bin center in degrees
                 - cum_frac: Cumulative fraction of population south of latitude
-        dec_cdf: Declination CDF DataFrame with columns:
-                - dec_bin_center: Declination bin center in degrees
-                - cum_frac: Cumulative fraction of pixels south of declination
+        footprint_boundary: Dictionary with footprint boundaries from
+                          extract_boundary() or load_footprint_cache()
     
     Returns:
         Declination in degrees that matches the input latitude's population percentile
+        within the available range at the given RA
     
     Raises:
         ValueError: If latitude is outside valid range [-90, 90]
-        ValueError: If CDFs are not properly normalized or not monotonic
+        ValueError: If RA is outside valid range [0, 360)
+        ValueError: If CDF is not properly normalized or not monotonic
     """
-    # Validate input latitude
+    # Validate inputs
     if not -90 <= lat_deg <= 90:
         raise ValueError(f"Latitude {lat_deg}° must be between -90° and 90°")
+    if not 0 <= ra_deg < 360:
+        raise ValueError(f"RA {ra_deg}° must be in [0, 360)")
     
     # Validate CDF properties
-    for cdf, name in [(pop_cdf, "Population"), (dec_cdf, "Declination")]:
-        # Check normalization (allowing for small numerical errors)
-        max_frac = cdf['cum_frac'].max()
-        if not 0.99 <= max_frac <= 1.01:
-            raise ValueError(f"{name} CDF not normalized: max = {max_frac:.3f}")
-        
-        # Check monotonicity
-        if not (cdf['cum_frac'].diff().dropna() >= 0).all():
-            raise ValueError(f"{name} CDF is not monotonically increasing")
+    max_frac = pop_cdf['cum_frac'].max()
+    if not 0.99 <= max_frac <= 1.01:
+        raise ValueError(f"Population CDF not normalized: max = {max_frac:.3f}")
+    if not (pop_cdf['cum_frac'].diff().dropna() >= 0).all():
+        raise ValueError("Population CDF is not monotonically increasing")
     
     # Sort population data from south to north
     pop_sorted = pop_cdf.sort_values('lat_bin_center')
@@ -62,17 +66,11 @@ def map_latitude_to_declination(
         right=1.0  # North pole
     )
     
-    # Sort declination data from south to north
-    dec_sorted = dec_cdf.sort_values('dec_bin_center')
+    # Get declination range at this RA
+    dec_south, dec_north = get_dec_range_at_ra(ra_deg, footprint_boundary)
     
-    # Find matching declination at same percentile
-    assigned_dec = np.interp(
-        pop_percentile,
-        dec_sorted['cum_frac'],
-        dec_sorted['dec_bin_center'],
-        left=dec_sorted['dec_bin_center'].min(),  # Southern limit
-        right=dec_sorted['dec_bin_center'].max()  # Northern limit
-    )
+    # Map percentile to available declination range
+    assigned_dec = dec_south + pop_percentile * (dec_north - dec_south)
     
     return assigned_dec
 

@@ -1,0 +1,8 @@
+# GHSL population data files
+GHS_POP_*.tif
+GHS_POP_*.tif.ovr
+GHS_POP_*.xlsx
+GHSL_*.pdf
+
+# Generated/cached files
+binned_population.csv

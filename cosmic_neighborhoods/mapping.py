@@ -8,13 +8,13 @@ from astropy_healpix import HEALPix
 from astropy.coordinates import SkyCoord, ICRS
 import astropy.units as u
 
-from cosmic_neighborhoods.footprint import get_dec_range_at_ra
+from cosmic_neighborhoods.boundary import RubinBoundary
 
 def map_latitude_to_declination(
     lat_deg: float,
     ra_deg: float,
     pop_cdf: pd.DataFrame,
-    footprint_boundary: dict,
+    footprint_boundary: RubinBoundary,
 ) -> float:
     """Map latitude to declination at specific RA using population percentile.
     
@@ -29,8 +29,7 @@ def map_latitude_to_declination(
         pop_cdf: Population CDF DataFrame with columns:
                 - lat_bin_center: Latitude bin center in degrees
                 - cum_frac: Cumulative fraction of population south of latitude
-        footprint_boundary: Dictionary with footprint boundaries from
-                          extract_boundary() or load_footprint_cache()
+        footprint_boundary: RubinBoundary object with footprint data
     
     Returns:
         Declination in degrees that matches the input latitude's population percentile
@@ -67,7 +66,7 @@ def map_latitude_to_declination(
     )
     
     # Get declination range at this RA
-    dec_south, dec_north = get_dec_range_at_ra(ra_deg, footprint_boundary)
+    dec_south, dec_north = footprint_boundary.get_dec_range(ra_deg)
     
     # Map percentile to available declination range
     assigned_dec = dec_south + pop_percentile * (dec_north - dec_south)

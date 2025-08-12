@@ -2,46 +2,21 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
+*.so
+.venv
 .eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
-.venv/
-venv/
-ENV/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Type checking
-.mypy_cache/
-
-# Linting/Formatting
-.ruff_cache/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # Project specific
-*.patch_data
-
+*.png
+*.db

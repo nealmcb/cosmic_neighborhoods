@@ -201,11 +201,12 @@ def assign_neighborhood(
     nside = resolution_to_nside(resolution)
     pixel = assign_healpix_tile(assigned_ra, dec, nside)
     
-    # Get pixel center
+    # Get pixel center and constellation
     hp = HEALPix(nside=nside, order='nested', frame='icrs')
     center = hp.healpix_to_skycoord(pixel)
     center_ra = center.ra.deg
     center_dec = center.dec.deg
+    constellation = center.get_constellation()
     
     # Calculate pixel area
     area = get_pixel_area(nside)
@@ -228,6 +229,7 @@ def assign_neighborhood(
             "area_deg2": area,
             "center_ra_deg": center_ra,
             "center_dec_deg": center_dec,
+            "constellation": constellation,
         },
         "versions": {
             "footprint": "opsim-baseline-v3.2",
@@ -241,7 +243,7 @@ def assign_neighborhood(
     else:
         print(f"Cosmic neighborhood for {lat:.6f}°N, {date}:")
         print(f"  Assigned point: RA {assigned_ra:.6f}°, Dec {dec:.6f}°")
-        print(f"  Pixel center: RA {center_ra:.6f}°, Dec {center_dec:.6f}°")
+        print(f"  Pixel center: RA {center_ra:.6f}°, Dec {center_dec:.6f}° (in {constellation})")
         print(f"  HEALPix {pixel} (nside={nside}, {area:.2f} deg²)")
 
 @app.command()
@@ -260,8 +262,8 @@ def main(
     ),
     resolution: int = typer.Argument(
         7,
-        help="HEALPix resolution (log2 of nside, 4-8)",
-        min=4,
+        help="HEALPix resolution (log2 of nside, 0-8; higher = smaller pixels)",
+        min=0,
         max=8,
     ),
     info: bool = typer.Option(

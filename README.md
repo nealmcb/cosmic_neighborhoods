@@ -137,22 +137,79 @@ Future versions will improve accuracy while maintaining the focus on accessibili
 
 ## Development
 
-```bash
-# Install dev dependencies
-uv pip install -e ".[dev]"
+### Setup
 
-# Run quality checks
+```bash
+# Create and activate virtual environment
+uv venv .venv
+source .venv/bin/activate
+
+# Install package in editable mode with dev dependencies
+uv pip install -e ".[dev]"
+```
+
+### Code Quality
+
+The project uses several tools to maintain code quality:
+
+- **Black** (via ruff): Code formatting with 100-character line length
+- **Ruff**: Fast Python linting
+- **Mypy**: Static type checking in strict mode
+- **Pytest**: Unit testing with coverage reporting
+
+Run quality checks:
+
+```bash
+# Run all checks (format, lint, typecheck, test)
 make check
 
-# Run tests only
-make test
+# Individual checks
+make format     # Format code with ruff
+make lint       # Run ruff linter
+make typecheck  # Run mypy type checker
+make test       # Run pytest with coverage
 
-# Run type checks only
-make typecheck
-
-# Run linting only
-make lint
+# Clean temporary files
+make clean
 ```
+
+### Project Structure
+
+- `cosmic_neighborhoods/`
+  - `cli.py`: Command-line interface
+  - `ephemeris.py`: Solar position calculations
+  - `population.py`: Population distribution handling
+  - `footprint.py`: Rubin footprint extraction
+  - `mapping.py`: Core assignment algorithms
+  - `boundary.py`: Footprint boundary representation
+  - `data/`: Data files and caches
+    - `footprint/`: Rubin survey data
+    - `population/`: GHSL population data
+- `tests/`: Unit tests
+- `pyproject.toml`: Project metadata and dependencies
+- `Makefile`: Development automation
+
+### Design Principles
+
+1. **Pure Computation**: Core logic is kept separate from I/O and CLI
+2. **Type Safety**: All functions have type hints and are mypy-checked
+3. **Documentation**: All functions have docstrings explaining behavior
+4. **Testing**: Core functions have unit tests with good coverage
+5. **Performance**: Data is cached and processed efficiently
+6. **User Experience**: Clear error messages and helpful CLI output
+
+### Git Workflow
+
+1. Run `make check` before commits
+2. Ensure all tests pass
+3. Keep commits focused and well-documented
+4. Follow conventional commit messages:
+   - `feat:` New features
+   - `fix:` Bug fixes
+   - `refactor:` Code restructuring
+   - `docs:` Documentation updates
+   - `test:` Test updates
+   - `chore:` Maintenance tasks
 
 ## Data Sources
 

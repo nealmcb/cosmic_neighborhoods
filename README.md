@@ -1,6 +1,48 @@
 # Cosmic Neighborhood
 
-A CLI tool to help people form a relationship with their personal patch of the night sky. Each user gets assigned a unique patch of sky based on their birth date and latitude, helping them track discoveries, monitor alerts, and eventually connect with others who share similar cosmic neighborhoods.
+There's a patch of sky that arcs overhead at night each year on your birthday -
+a place in the cosmos always unfolding while you go about your life.
+
+We invite you to reconnect with that part of the universe - and to share it with others
+whose circumstances of birth align them with nearby regions of sky.
+
+Using just your birth date and the latitude of your birthplace, you are assigned
+a small patch of the sky observed by the Vera C. Rubin Observatory.
+
+We'll help connect you with tools to track what changes there -
+flares, new asteroids, distant supernovae -
+and over time, help you find yourself in conversation with the cosmos
+and with others whose patches lie close by.
+
+This is your cosmic neighborhood: a way to stay curious, stay connected,
+and find meaning in the rhythms of the sky.
+
+
+This repository provides a simple tool that can be used to assign people to patches of the sky.
+The tool is initially configured to cover just the areas of the sky that the
+Rubin Observatory is surveying (its expected "footprint"), but can be easily adapted to
+a different footprint, like that of the Zwicky Transient Facility.
+
+Every night Rubin identifes perhaps 10 million changes in the sky, which
+are communicated as "alerts" via "brokers". You can customize the broker to only
+notify you about certain types of events in your chosen or assigned area of the sky.
+
+## Calculating assignments: mapping people to the survey footprint
+The project assigns cosmic neighborhoods so as to achieve a relatively even coverage of the
+survey footprint, by taking into account both the shape of the footprint, and the distribution
+of people across the planet and across time.
+
+Birthdays are assumed to be relatively evenly spread out around the year, and are used to choose
+the Right Ascension of the assigned neighborhood, such that it culminates around midnight
+on their birthday. Face south at midnight on your birthday, and your assigned patch
+will be as high in the sky as it ever gets.
+
+Spreading the neighborhoods out evenly north-to-south across the footprint
+is a bit trickier.
+The goal is to make them visible from the person's birthplace, by assigning
+those born furthest to the north to the most northernly areas of the footprint,
+and proceeding south by mapping each percentile of the global human birth-latitude
+distribution to the same percentile in the Rubin footprint’s cumulative sky area by declination.
 
 ## Installation
 
@@ -40,31 +82,32 @@ The tool provides several commands:
 Get your personal patch of the night sky:
 
 ```bash
-cosmic assign --birth-date 1990-06-15 --latitude 45.0
+# Basic usage (resolution=7 for ~0.21 deg² pixels)
+cosmic 45.0 1990-06-15
+
+# Higher resolution (resolution=8 for ~0.05 deg² pixels)
+cosmic 45.0 1990-06-15 8
+
+# Lower resolution (resolution=4 for ~3.4 deg² pixels)
+cosmic 45.0 1990-06-15 4
+
+# Show data status and cache paths
+cosmic --info
+
+# JSON output
+cosmic 45.0 1990-06-15 --json
 ```
 
-### Check Sun Times
+### Initialize Data (First Use)
 
-View sunrise, sunset, and twilight times for your location:
-
-```bash
-cosmic sun --latitude 45.0 --longitude -75.0
-```
-
-### Monitor Alerts (Coming Soon)
-
-Check for events in your patch (stub in v1):
+Before first use, you need to initialize the footprint and population data:
 
 ```bash
-cosmic alerts --patch-id P0615N45
-```
+# Initialize footprint from OpSim database
+cosmic --init-footprint PATH_TO_OPSIM.db
 
-### JSON Output
-
-All commands support JSON output with the `--json` flag:
-
-```bash
-cosmic assign --birth-date 1990-06-15 --latitude 45.0 --json
+# Initialize population from GHSL data
+cosmic --init-population PATH_TO_GHSL.tif
 ```
 
 ## Accuracy Notes

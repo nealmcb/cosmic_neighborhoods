@@ -2,6 +2,7 @@
 name = "cosmic_neighborhoods"
 version = "0.1.0"
 description = "Personalized Rubin Sky Patches"
+license = "MIT"
 authors = [
     {name = "Neal McBurnett"},
 ]

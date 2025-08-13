@@ -1,7 +1,5 @@
 """Functions for mapping between population latitude and Rubin declination."""
 
-from typing import Tuple
-
 import numpy as np
 import pandas as pd
 from astropy_healpix import HEALPix
@@ -10,6 +8,7 @@ import astropy.units as u
 
 from cosmic_neighborhoods.boundary import RubinBoundary
 
+
 def map_latitude_to_declination(
     lat_deg: float,
     ra_deg: float,
@@ -17,12 +16,12 @@ def map_latitude_to_declination(
     footprint_boundary: RubinBoundary,
 ) -> float:
     """Map latitude to declination at specific RA using population percentile.
-    
+
     For a given latitude φ and RA:
     1. Find what percentile φ is in global population distribution
     2. Get available declination range [δ_s, δ_n] at that RA
     3. Map percentile to that range
-    
+
     Args:
         lat_deg: Input latitude in degrees [-90, 90]
         ra_deg: Right ascension in degrees [0, 360)
@@ -30,11 +29,11 @@ def map_latitude_to_declination(
                 - lat_bin_center: Latitude bin center in degrees
                 - cum_frac: Cumulative fraction of population south of latitude
         footprint_boundary: RubinBoundary object with footprint data
-    
+
     Returns:
         Declination in degrees that matches the input latitude's population percentile
         within the available range at the given RA
-    
+
     Raises:
         ValueError: If latitude is outside valid range [-90, 90]
         ValueError: If RA is outside valid range [0, 360)
@@ -45,33 +44,35 @@ def map_latitude_to_declination(
         raise ValueError(f"Latitude {lat_deg}° must be between -90° and 90°")
     if not 0 <= ra_deg < 360:
         raise ValueError(f"RA {ra_deg}° must be in [0, 360)")
-    
+
     # Validate CDF properties
-    max_frac = pop_cdf['cum_frac'].max()
+    max_frac = pop_cdf["cum_frac"].max()
     if not 0.99 <= max_frac <= 1.01:
         raise ValueError(f"Population CDF not normalized: max = {max_frac:.3f}")
-    if not (pop_cdf['cum_frac'].diff().dropna() >= 0).all():
+    if not (pop_cdf["cum_frac"].diff().dropna() >= 0).all():
         raise ValueError("Population CDF is not monotonically increasing")
-    
+
     # Sort population data from south to north
-    pop_sorted = pop_cdf.sort_values('lat_bin_center')
-    
+    pop_sorted = pop_cdf.sort_values("lat_bin_center")
+
     # Get population percentile for input latitude
     pop_percentile = np.interp(
         lat_deg,
-        pop_sorted['lat_bin_center'],
-        pop_sorted['cum_frac'],
+        pop_sorted["lat_bin_center"],
+        pop_sorted["cum_frac"],
         left=0.0,  # South pole
-        right=1.0  # North pole
+        right=1.0,  # North pole
     )
-    
+
     # Get declination range at this RA
     dec_south, dec_north = footprint_boundary.get_dec_range(ra_deg)
-    
+
     # Map percentile to available declination range
-    assigned_dec = dec_south + pop_percentile * (dec_north - dec_south)
-    
+    # For northern latitudes, we want higher declinations
+    assigned_dec = dec_north - (1.0 - pop_percentile) * (dec_north - dec_south)
+
     return assigned_dec
+
 
 def assign_healpix_tile(
     ra_deg: float,
@@ -79,15 +80,28 @@ def assign_healpix_tile(
     nside: int = 128,
 ) -> int:
     """Return HEALPix nested pixel id containing (ra, dec).
-    
+
+    We use the nested ordering scheme (not ring) because:
+    1. Nested pixels have a hierarchical quad-tree structure
+    2. Adjacent pixels in 2D remain adjacent when resolution changes
+    3. Parent-child relationships are simple bit operations
+    4. Better for spatial queries and region containment
+
+    Note: The same sky location will have different pixel numbers
+    in nested vs ring ordering. For example, at nside=128:
+    - RA=303.047°, Dec=-8.084°:
+        - Nested scheme: pixel 119819 (used here)
+        - Ring scheme: pixel 147239
+    Both schemes cover the sky identically, just numbered differently.
+
     Args:
         ra_deg: Right ascension in degrees [0, 360)
         dec_deg: Declination in degrees [-90, 90]
         nside: HEALPix nside parameter (power of 2)
-    
+
     Returns:
         HEALPix pixel index (nested scheme)
-    
+
     Raises:
         ValueError: If RA/Dec out of valid ranges
         ValueError: If nside not a power of 2
@@ -99,14 +113,14 @@ def assign_healpix_tile(
         raise ValueError(f"Dec {dec_deg}° must be in [-90, 90]")
     if not (nside & (nside - 1) == 0):  # Power of 2 check
         raise ValueError(f"nside {nside} must be a power of 2")
-    
+
     # Create HEALPix object (ICRS frame)
-    hp = HEALPix(nside=nside, order='nested', frame=ICRS())
-    
+    hp = HEALPix(nside=nside, order="nested", frame=ICRS())
+
     # Create SkyCoord object
-    coords = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame='icrs')
-    
+    coords = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg, frame="icrs")
+
     # Convert to pixel index
     pixel = hp.skycoord_to_healpix(coords)
-    
+
     return pixel

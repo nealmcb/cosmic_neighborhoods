@@ -110,6 +110,20 @@ cosmic --init-footprint PATH_TO_OPSIM.db
 cosmic --init-population PATH_TO_GHSL.tif
 ```
 
+## Understanding Your Patch
+
+Your cosmic neighborhood is defined by a HEALPix (Hierarchical Equal Area isoLatitude Pixelization) tile. This system divides the sky into equal-area pixels in a way that's particularly useful for astronomy:
+
+- Each pixel has the same area (important for fair distribution)
+- Pixels are arranged in a hierarchical pattern (like a nested tree)
+- Higher resolution means smaller pixels:
+  - Resolution 0: 12 pixels total (~3438 deg² each)
+  - Resolution 4: 3072 pixels (~13.4 deg² each)
+  - Resolution 7: 196,608 pixels (~0.21 deg² each, default)
+  - Resolution 8: 786,432 pixels (~0.05 deg² each)
+
+The HEALPix index (e.g., "pixel 119819") uniquely identifies your patch. We use the "nested" ordering scheme because it preserves relationships between pixels at different resolutions - a lower-resolution pixel contains all the higher-resolution pixels that would subdivide it.
+
 ## Accuracy Notes
 
 This is version 1, focused on getting people connected with their patch of sky. The calculations are intentionally simplified:

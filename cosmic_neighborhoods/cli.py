@@ -6,24 +6,22 @@ Each person's cosmic neighborhood is a HEALPix tile that:
 2. Has a declination matching their birth latitude's population percentile
 """
 
-from pathlib import Path
-from typing import Optional, Tuple
+import importlib.resources
 import json
 import warnings
-import importlib.resources
-
-# Suppress ERFA warnings about historical dates
-warnings.filterwarnings('ignore', category=Warning)
+from pathlib import Path
+from typing import Optional, Tuple
 
 import typer
 from astropy_healpix import HEALPix
-from astropy.coordinates import SkyCoord
-import astropy.units as u
 
 from cosmic_neighborhoods.boundary import RubinBoundary
 from cosmic_neighborhoods.population import build_population_cdf
 from cosmic_neighborhoods.mapping import map_latitude_to_declination, assign_healpix_tile
 from cosmic_neighborhoods.ephemeris import sun_ra_deg, convert_to_gregorian
+
+# Suppress ERFA warnings about historical dates
+warnings.filterwarnings("ignore", category=Warning)
 
 app = typer.Typer(
     help="""Assign your cosmic neighborhood in the Rubin sky.
@@ -46,6 +44,7 @@ Examples:
     no_args_is_help=True,
 )
 
+
 def get_package_root() -> Path:
     """Get the root directory of the cosmic_neighborhoods package."""
     try:
@@ -56,15 +55,16 @@ def get_package_root() -> Path:
         root = Path(__file__).parent
     return root
 
+
 def check_data_files() -> Tuple[bool, bool, str]:
     """Check if required data files exist and return status and message."""
     root = get_package_root()
     footprint_cache = root / "data/footprint/boundary_nside128.npz"
     pop_source = root / "data/population/GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.tif"
-    
+
     footprint_ok = footprint_cache.exists()
     population_ok = pop_source.exists()
-    
+
     msg = ""
     if not footprint_ok or not population_ok:
         msg = "\nMissing required data:"
@@ -77,16 +77,19 @@ def check_data_files() -> Tuple[bool, bool, str]:
             msg += "\n   - Download GHSL GHS-POP R2023A data"
             msg += "\n   - Run: cosmic --init-population PATH_TO_GHSL.tif"
         msg += "\n\nRun 'cosmic --info' for more details"
-    
+
     return footprint_ok, population_ok, msg
+
 
 def resolution_to_nside(resolution: int) -> int:
     """Convert resolution (log2 nside) to nside."""
-    return 2 ** resolution
+    return 2**resolution
+
 
 def get_pixel_area(nside: int) -> float:
     """Get area of one HEALPix pixel in square degrees."""
     return 41252.96 / (12 * nside * nside)
+
 
 def show_info() -> None:
     """Show data versions and cache status."""
@@ -94,15 +97,15 @@ def show_info() -> None:
     root = get_package_root()
     footprint_cache = root / "data/footprint/boundary_nside128.npz"
     pop_source = root / "data/population/GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.tif"
-    
+
     print("Cosmic Neighborhoods Status:")
     print()
-    
+
     # Software status first
     print("Software:")
     print("  Version: 0.1.0")
     print()
-    
+
     # Footprint status
     print("Footprint data:")
     if footprint_cache.exists():
@@ -114,7 +117,7 @@ def show_info() -> None:
         print(f"  Expected path: {footprint_cache}")
         print("  Action: Run cosmic --init-footprint PATH_TO_OPSIM.db")
     print()
-    
+
     # Population status
     print("Population data:")
     if pop_source.exists():
@@ -126,7 +129,7 @@ def show_info() -> None:
         print(f"  Expected path: {pop_source}")
         print("  Action: Download GHSL data and run cosmic --init-population PATH_TO_GHSL.tif")
     print()
-    
+
     if not footprint_cache.exists() or not pop_source.exists():
         print("Setup required:")
         if not footprint_cache.exists():
@@ -136,34 +139,37 @@ def show_info() -> None:
             print("3. Download GHSL population data")
             print("4. Run: cosmic --init-population PATH_TO_GHSL.tif")
 
+
 def initialize_footprint(opsim_db: Path) -> None:
     """Initialize footprint data from OpSim database."""
     try:
         # Extract boundary
         boundary = RubinBoundary.from_opsim(opsim_db)
-        
+
         # Save to cache
         root = get_package_root()
         cache_file = root / "data/footprint/boundary_nside128.npz"
         cache_dir = cache_file.parent
         cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         boundary.save(cache_file)
         print(f"Footprint data cached to {cache_file}")
-            
+
     except Exception as e:
         print(f"Error: {str(e)}")
         raise typer.Exit(1)
 
+
 def initialize_population(pop_source: Path) -> None:
     """Initialize population data from GHSL GeoTIFF."""
     try:
-        pop_cdf = build_population_cdf(pop_source)
+        build_population_cdf(pop_source)  # This caches the CDF
         print(f"Population CDF built from {pop_source}")
-            
+
     except Exception as e:
         print(f"Error: {str(e)}")
         raise typer.Exit(1)
+
 
 def assign_neighborhood(
     lat: float,
@@ -176,16 +182,16 @@ def assign_neighborhood(
     # Convert date to Gregorian
     if calendar != "gregorian":
         date = convert_to_gregorian(date, calendar)
-    
+
     # Get Sun's RA and add 180° for nighttime
     sun_ra = sun_ra_deg(date)
     assigned_ra = (sun_ra + 180.0) % 360.0  # This puts us OPPOSITE the Sun, visible at midnight
-    
+
     # Load population CDF
     root = get_package_root()
     pop_source = root / "data/population/GHS_POP_E2020_GLOBE_R2023A_4326_30ss_V1_0.tif"
     pop_cdf = build_population_cdf(pop_source)
-    
+
     # Load footprint boundary
     try:
         cache_file = root / "data/footprint/boundary_nside128.npz"
@@ -193,24 +199,24 @@ def assign_neighborhood(
     except FileNotFoundError:
         print("Error: Footprint data not initialized. Run 'cosmic --info' first.")
         raise typer.Exit(1)
-    
+
     # Map latitude to declination
     dec = map_latitude_to_declination(lat, assigned_ra, pop_cdf, boundary)
-    
+
     # Assign HEALPix tile
     nside = resolution_to_nside(resolution)
     pixel = assign_healpix_tile(assigned_ra, dec, nside)
-    
+
     # Get pixel center and constellation
-    hp = HEALPix(nside=nside, order='nested', frame='icrs')
+    hp = HEALPix(nside=nside, order="nested", frame="icrs")
     center = hp.healpix_to_skycoord(pixel)
     center_ra = center.ra.deg
     center_dec = center.dec.deg
     constellation = center.get_constellation()
-    
+
     # Calculate pixel area
     area = get_pixel_area(nside)
-    
+
     result = {
         "input": {
             "latitude_deg": lat,
@@ -237,7 +243,7 @@ def assign_neighborhood(
             "code": "0.1.0",
         },
     }
-    
+
     if json_output:
         print(json.dumps(result))
     else:
@@ -245,6 +251,7 @@ def assign_neighborhood(
         print(f"  Assigned point: RA {assigned_ra:.6f}°, Dec {dec:.6f}°")
         print(f"  Pixel center: RA {center_ra:.6f}°, Dec {center_dec:.6f}° (in {constellation})")
         print(f"  HEALPix {pixel} (nside={nside}, {area:.2f} deg²)")
+
 
 @app.command()
 def main(
@@ -310,26 +317,27 @@ def main(
         elif init_population:
             initialize_population(init_population)
             return
-        
+
         # Default behavior: assignment
         if lat is None or date is None:
             if not any([info, init_footprint, init_population]):
-                            print("Error: Latitude and date are required")
+                print("Error: Latitude and date are required")
             print("Run 'cosmic --help' for usage examples")
             raise typer.Exit(1)
             return
-        
+
         # Check data availability before attempting assignment
         footprint_ok, population_ok, msg = check_data_files()
         if not (footprint_ok and population_ok):
             print(msg)
             raise typer.Exit(1)
-        
+
         assign_neighborhood(lat, date, resolution, calendar, json)
-            
+
     except Exception as e:
         print(f"Error: {str(e)}")
         raise typer.Exit(1)
+
 
 if __name__ == "__main__":
     app()

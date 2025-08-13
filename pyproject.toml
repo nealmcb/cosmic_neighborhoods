@@ -20,6 +20,14 @@ dependencies = [
 ]
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "mypy>=1.8",
+    "ruff>=0.2",
+]
+
 [project.scripts]
 cosmic = "cosmic_neighborhoods.cli:app"
 

@@ -1,21 +1,28 @@
-.PHONY: check test lint format typecheck clean
+.PHONY: check test typecheck lint format clean
 
+# Run all quality checks
 check: format lint typecheck test
 
+# Run tests with coverage
 test:
-	pytest tests/ -v --cov=cosmiccli
+	.venv/bin/pytest --cov=cosmic_neighborhoods tests/ --cov-report=term-missing
 
-lint:
-	ruff check cosmiccli tests
-	
-format:
-	ruff format cosmiccli tests
-	black cosmiccli tests
-
+# Run type checks
 typecheck:
-	mypy cosmiccli tests
+	.venv/bin/mypy cosmic_neighborhoods/ tests/
 
+# Run linting
+lint:
+	.venv/bin/ruff check cosmic_neighborhoods/ tests/
+
+# Format code
+format:
+	.venv/bin/ruff format cosmic_neighborhoods/ tests/
+
+# Clean temporary files
 clean:
-	rm -rf .pytest_cache .coverage .mypy_cache .ruff_cache __pycache__ cosmiccli/__pycache__ tests/__pycache__
-	rm -rf dist build *.egg-info
-
+	rm -rf .coverage
+	rm -rf .pytest_cache
+	rm -rf .ruff_cache
+	rm -rf .mypy_cache
+	find . -type d -name "__pycache__" -exec rm -rf {} +

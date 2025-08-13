@@ -172,3 +172,4 @@ class RubinBoundary:
         
         if not np.all(data['dec_south'] <= data['dec_north']):
             raise ValueError("Southern boundary must not exceed northern boundary")
+

@@ -15,6 +15,9 @@
 - All core functions must have unit tests
 - Use pytest, maintain test coverage
 
+## Policies
+- Preserve planned work and ideas in TODO.md
+
 ## Design Decisions
 - HEALPix for sky tiling (nside=2^resolution, resolution 0-8)
 - Store footprint boundaries in .npz format

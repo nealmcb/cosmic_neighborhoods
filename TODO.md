@@ -1,8 +1,8 @@
 # TODO List
 
 ## Footprint Analysis
-- [ ] Create visualization of footprint visit density, focusing on northern region sparseness
-- [ ] Analyze distribution of expected visit counts across footprint
+- [ ] Create visualization of footprint visit density, focusing on northern region sparseness (and ensure it handles log scale to capture both rare pixels and DDFs)
+- [ ] Produce the footprint density visualization in a FITS format or similar, so it can be opened in Aladin.
 - [ ] Modify footprint boundary to exclude areas with fewer than ~10 expected visits
 - [ ] Update boundary cache format to include visit counts and regenerate cache file
 
@@ -28,6 +28,8 @@
 - [ ] Analyze alert broker filtering capabilities
 - [ ] Set up AlertSim for local testing and analysis
 - [ ] Create guidelines for observation strategy by equipment type
+- [ ] Improve visibility of Deep Drilling Fields in visualization - avoid yellow/green that makes DDFs invisible to colorblind users
+- [ ] Design system for handling seasonal and daily alert distribution variations (sun proximity, moon phase, weather patterns) to help users optimize their alert subscriptions
 
 ## Terminology and Documentation
 - [ ] Review and document HEALPix terminology (order vs nside)

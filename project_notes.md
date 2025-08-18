@@ -17,6 +17,7 @@
 
 ## Policies
 - Preserve planned work and ideas in TODO.md
+- Never change or remove anything in the neal_ignore directory. That is used to manually retain state and notes.
 
 ## Design Decisions
 - HEALPix for sky tiling (nside=2^resolution, resolution 0-8)

@@ -2,253 +2,30 @@
 
 from pathlib import Path
 import random
-import sqlite3
-from typing import Tuple, Dict, Optional, List, Set
+from typing import Tuple, Dict, Optional, List
 
 import numpy as np
 import pandas as pd
 from astropy_healpix import HEALPix
 from astropy.coordinates import ICRS, SkyCoord
 import astropy.units as u
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap, BoundaryNorm
+import warnings
 
-# Standard HEALPix parameters
-NSIDE = 128  # Order 7
+warnings.filterwarnings("ignore")  # Suppress astropy/ERFA warnings
+
+# Standard HEALPix parameters for footprint visualization
+NSIDE_VIZ = 64  # Order 6, 49,152 pixels total (12 * 64^2)
 
 # Rubin field parameters
 FIELD_WIDTH = 3.5  # degrees, full width
 FIELD_HEIGHT = 3.5  # degrees, full height
 FIELD_DIAGONAL = np.sqrt(FIELD_WIDTH**2 + FIELD_HEIGHT**2)  # For initial cone search
 
-def get_pixels_in_field(
-    ra: float,
-    dec: float,
-    rotator_angle: float = 0.0,  # Ignored in simple version
-    nside: int = NSIDE,
-) -> np.ndarray:
-    """Get HEALPix pixels that approximately overlap with a Rubin field pointing.
-    
-    This is a simplified version that treats the field as a circle with radius
-    equal to the field width/2. This is good enough for our use case since:
-    1. We're using NSIDE=128 (order 7) where pixels are ~0.5° across
-    2. The Rubin field is 3.5° × 3.5°
-    3. Small inaccuracies at field edges won't impact visit statistics much
-    
-    Args:
-        ra: Right ascension of field center in degrees [0, 360)
-        dec: Declination of field center in degrees [-90, 90]
-        rotator_angle: Ignored in this simple version
-        nside: HEALPix nside parameter (power of 2)
-    
-    Returns:
-        Array of HEALPix pixel indices (nested scheme)
-    """
-    hp = HEALPix(nside=nside, order="nested", frame=ICRS())
-    
-    # Use circle with radius = field width/2
-    # This will miss some corner pixels but include some extra edge pixels
-    # The differences roughly cancel out for visit statistics
-    return hp.cone_search_lonlat(
-        lon=ra * u.deg,
-        lat=dec * u.deg,
-        radius=FIELD_WIDTH/2 * u.deg
-    )
-
-
-def count_pixel_visits(db_path: Path, cache_path: Optional[Path] = None) -> pd.Series:
-    """Count the number of visits to each HEALPix pixel.
-    
-    This efficiently processes the OpSim database to count how many times each
-    HEALPix pixel is observed, taking into account the field of view size.
-    Results can optionally be cached for faster reuse.
-    
-    Args:
-        db_path: Path to OpSim SQLite database
-        cache_path: Optional path to cache results as parquet
-    
-    Returns:
-        Series indexed by healpix pixel number containing visit counts
-    """
-    # Check cache first
-    if cache_path is not None and cache_path.exists():
-        return pd.read_parquet(cache_path)["visits"]
-    
-    print("\nCounting visits per HEALPix pixel...")
-    visit_counts = {}  # pixel -> count
-    
-    with sqlite3.connect(db_path) as conn:
-        # Process in chunks to avoid loading entire database
-        chunk_size = 10000
-        offset = 0
-        
-        while True:
-            # Get a chunk of pointings
-            query = f"""
-            SELECT fieldRA, fieldDec, rotSkyPos
-            FROM observations
-            LIMIT {chunk_size} OFFSET {offset}
-            """
-            chunk = pd.read_sql_query(query, conn)
-            if len(chunk) == 0:
-                break
-                
-            if offset == 0:
-                print(f"Processing pointings in chunks of {chunk_size:,}...")
-            
-            # Process each pointing
-            for _, row in chunk.iterrows():
-                # Get all pixels covered by this pointing
-                pixels = get_pixels_in_field(
-                    row["fieldRA"],
-                    row["fieldDec"],
-                    rotator_angle=row["rotSkyPos"]
-                )
-                
-                # Update counts
-                for pixel in pixels:
-                    visit_counts[pixel] = visit_counts.get(pixel, 0) + 1
-            
-            offset += chunk_size
-            if offset % 100000 == 0:
-                print(f"  Processed {offset:,} pointings...")
-    
-    # Convert to Series
-    visits = pd.Series(visit_counts, name="visits")
-    visits.index.name = "healpix"
-    
-    # Cache if requested
-    if cache_path is not None:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        visits.to_frame().to_parquet(cache_path)
-        print(f"\nVisit counts cached to {cache_path}")
-    
-    return visits
-
-
-def build_observation_cache(db_path: Path, cache_path: Path) -> None:
-    """Build and save cache mapping observation times to affected HEALPix pixels.
-    
-    This creates a mapping between HEALPix pixels and their observation times from
-    the OpSim database. Each pointing in the database affects multiple pixels due
-    to the field of view size.
-    
-    Args:
-        db_path: Path to OpSim SQLite database
-        cache_path: Path where to save the parquet cache file
-    """
-    import time
-    print("\nBuilding pixel observation cache...")
-    
-    with sqlite3.connect(db_path) as conn:
-        # Get total count first
-        total = pd.read_sql_query("SELECT COUNT(*) as n FROM observations", conn).iloc[0]["n"]
-        print(f"Total observations to process: {total:,}")
-        
-        # Process in chunks to avoid loading entire database
-        chunk_size = 10000
-        offset = 0
-        start_time = time.time()
-        total_pixels = 0
-        
-        while True:
-            chunk_start = time.time()
-            
-            # Get a chunk of pointings
-            query = f"""
-            SELECT fieldRA, fieldDec, rotSkyPos, observationStartMJD
-            FROM observations
-            ORDER BY observationStartMJD
-            LIMIT {chunk_size} OFFSET {offset}
-            """
-            chunk = pd.read_sql_query(query, conn)
-            if len(chunk) == 0:
-                break
-            
-            if offset == 0:
-                print(f"Processing pointings in chunks of {chunk_size:,}...")
-            
-            # Process each pointing
-            all_pixels = []  # HEALPix pixel numbers
-            all_mjds = []    # Corresponding observation times
-            
-            for _, row in chunk.iterrows():
-                # Get all pixels covered by this pointing
-                pixels = get_pixels_in_field(
-                    row["fieldRA"],
-                    row["fieldDec"],
-                    rotator_angle=row["rotSkyPos"]
-                )
-                
-                # Add an entry for each pixel
-                all_pixels.extend(pixels)
-                all_mjds.extend([row["observationStartMJD"]] * len(pixels))
-            
-            # Create DataFrame for this chunk
-            chunk_df = pd.DataFrame({
-                "healpix": all_pixels,
-                "mjd": all_mjds
-            })
-            
-            # Accumulate chunks in memory
-            if offset == 0:
-                full_df = chunk_df
-            else:
-                full_df = pd.concat([full_df, chunk_df], ignore_index=True)
-            
-            # Update progress
-            offset += chunk_size
-            total_pixels += len(chunk_df)
-            chunk_time = time.time() - chunk_start
-            
-            # Show basic progress every 1000 observations
-            if offset % 1000 == 0:
-                elapsed = time.time() - start_time
-                obs_per_sec = offset / elapsed if elapsed > 0 else 0
-                remaining = (total - offset) / obs_per_sec if obs_per_sec > 0 else 0
-                
-                print(
-                    f"Progress: {offset:,}/{total:,} obs "
-                    f"({offset/total:.1%}), "
-                    f"Speed: {obs_per_sec:.1f} obs/sec, "
-                    f"ETA: {remaining/60:.1f}m",
-                    flush=True  # Force output
-                )
-            
-            # Show detailed stats every 100k observations
-            if offset % 100000 == 0:
-                print(
-                    f"\nGenerated {total_pixels:,} pixel-observation pairs "
-                    f"({total_pixels/offset:.1f} pixels/pointing avg)"
-                )
-                print(
-                    f"Memory used: {full_df.memory_usage(deep=True).sum()/1e9:.1f} GB"
-                )
-    
-    print("\nSaving cache...")
-    full_df.to_parquet(cache_path)
-    print(f"Cache saved to {cache_path}")
-
-
-def load_observation_cache(cache_path: Path) -> pd.DataFrame:
-    """Load the pixel observation cache.
-    
-    Args:
-        cache_path: Path to the parquet cache file
-    
-    Returns:
-        DataFrame with columns:
-            - healpix: HEALPix pixel index (nested scheme)
-            - mjd: Modified Julian Date of observation
-    
-    Raises:
-        FileNotFoundError: If cache file doesn't exist
-    """
-    if not cache_path.exists():
-        raise FileNotFoundError(
-            f"Cache file not found at {cache_path}. "
-            "Run build_observation_cache() first."
-        )
-    
-    return pd.read_parquet(cache_path)
+import healpy as hp
+from healpy import HEALPix, ICRS, GeocentricTrueEcliptic
+from astropy.coordinates import SkyCoord
 
 
 def extract_boundary(db_path: str | Path) -> Dict[str, np.ndarray]:
@@ -287,11 +64,11 @@ def extract_boundary(db_path: str | Path) -> Dict[str, np.ndarray]:
     # Find maximum declination for each RA bin
     max_decs = pointings.groupby("ra_bin")["fieldDec"].max()
 
-    # Update northern boundary (adding field radius)
+    # Update northern boundary (adding field radius of 1.75°)
     for ra, dec in max_decs.items():
         idx = int(ra * 10)  # Convert RA to array index
         if idx < len(dec_north):
-            dec_north[idx] = dec + FIELD_HEIGHT/2  # Add half field height
+            dec_north[idx] = dec + 1.75  # Add field radius
 
     # Interpolate any gaps
     mask = dec_north > -90
@@ -394,3 +171,166 @@ def extract_opsim_pointings(
         pointings = pointings.sample(n=min(sample_size, len(pointings)), random_state=random_seed)
 
     return pointings
+
+
+def get_healpix_indices(ra: np.ndarray, dec: np.ndarray, nside: int = NSIDE_VIZ) -> np.ndarray:
+    """Convert arrays of (RA, Dec) to HEALPix pixel indices (nested scheme)."""
+    hp = HEALPix(nside=nside, order="nested", frame=ICRS())
+    return hp.lonlat_to_healpix(ra * u.deg, dec * u.deg)
+
+def get_pixel_centers(pixels: np.ndarray, nside: int = NSIDE_VIZ) -> tuple[np.ndarray, np.ndarray]:
+    """Get (RA, Dec) of multiple HEALPix pixel centers at once."""
+    hp = HEALPix(nside=nside, order="nested", frame=ICRS())
+    lon, lat = hp.healpix_to_lonlat(pixels)
+    return lon.deg, lat.deg
+
+def plot_visit_density(pixels_df: pd.DataFrame, filename: str) -> None:
+    """Plot visit density across the footprint.
+
+    This visualization uses a deuteranopia-friendly color scheme.
+    """
+    # Define visit thresholds focusing on key ranges
+    visit_bounds = [0, 1, 2, 5, 7, 10, 15, 20, 25, 30, 50, 80, 100, 150]
+    
+    # Define colors for each range - high contrast for deuteranopia
+    # Blue-white-orange-red progression
+    colors = [
+        '#000033',  # Darkest blue for 0-1
+        '#000099',  # Very dark blue for 1-2
+        '#0000FF',  # Pure blue for 2-5
+        '#0099FF',  # Sky blue for 5-7
+        '#00CCFF',  # Light blue for 7-10
+        '#00FFFF',  # Cyan for 10-15
+        '#FFFFFF',  # White for 15-20
+        '#FFCC00',  # Gold for 20-25
+        '#FF9900',  # Orange for 25-30
+        '#FF6600',  # Dark orange for 30-50
+        '#FF3300',  # Red-orange for 50-80
+        '#FF0000',  # Pure red for 80-100
+        '#CC0000',  # Dark red for 100-150
+        '#990000',  # Very dark red for 150+
+    ]
+    
+    # Create figure with Mollweide projection
+    plt.figure(figsize=(15, 10))
+    ax = plt.subplot(111, projection='mollweide')
+    
+    # Convert coordinates to radians for Mollweide projection
+    ra_rad = np.deg2rad(pixels_df["ra"] - 180)  # Shift RA range from [0,360] to [-180,180]
+    dec_rad = np.deg2rad(pixels_df["dec"])
+    
+    # Create colormap and normalize
+    custom_cmap = ListedColormap(colors)
+    norm = BoundaryNorm(visit_bounds, len(colors))
+    
+    # Plot points with smaller size
+    scatter = ax.scatter(
+        ra_rad,
+        dec_rad,
+        c=pixels_df["visits"],
+        norm=norm,
+        cmap=custom_cmap,
+        s=8,  # Much smaller points
+        alpha=1.0  # Full opacity
+    )
+    
+    # Add ecliptic plane
+    ecl_lon = np.linspace(-180, 180, 360)
+    ecl_lat = np.zeros_like(ecl_lon)
+    coords = SkyCoord(
+        lon=ecl_lon * u.deg,
+        lat=ecl_lat * u.deg,
+        frame=GeocentricTrueEcliptic
+    )
+    icrs = coords.transform_to(ICRS())
+    # Convert RA to [-180,180] range and to radians
+    ecl_ra = np.deg2rad(np.mod(icrs.ra.deg + 180, 360) - 180)
+    ecl_dec = icrs.dec.rad
+    ax.plot(ecl_ra, ecl_dec, 'r--', alpha=0.3, linewidth=1, label='Ecliptic plane')
+    
+    # Add colorbar with explicit labels
+    cbar = plt.colorbar(scatter, label="Number of visits", 
+                       ticks=visit_bounds,
+                       boundaries=visit_bounds,
+                       extend='max')
+    cbar.ax.set_yticklabels([f"{int(b)}" for b in visit_bounds[:-1]] + [f"{visit_bounds[-1]}+"])
+    
+    # Add grid and title
+    plt.grid(True, alpha=0.3)
+    plt.title(f"Rubin Visit Density (nside={NSIDE_VIZ})")
+    
+    # Save figure
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.close()
+
+def visualize_visit_density(db_path: Path, output_filename: str = "visit_density.png") -> None:
+    """Visualize visit density across the Rubin footprint.
+
+    Args:
+        db_path: Path to OpSim SQLite database.
+        output_filename: Name of the output image file.
+    """
+    import sqlite3 # Moved inside function to avoid circular dependency
+    from astropy.coordinates import GeocentricTrueEcliptic # Moved inside function
+    
+    print("\nAnalyzing visit density across the Rubin footprint...")
+    
+    # Read all pointings
+    with sqlite3.connect(db_path) as conn:
+        query = "SELECT fieldRA, fieldDec FROM observations"
+        pointings = pd.read_sql_query(query, conn)
+    
+    print(f"Found {len(pointings):,} total pointings")
+    
+    # Convert all pointings to HEALPix at once
+    print("\nConverting pointings to HEALPix pixels...")
+    healpix_indices = get_healpix_indices(
+        pointings["fieldRA"].values,
+        pointings["fieldDec"].values,
+        nside=NSIDE_VIZ
+    )
+    
+    # Count visits per pixel
+    unique_pixels, visit_counts = np.unique(healpix_indices, return_counts=True)
+    print(f"\nFound {len(unique_pixels):,} unique HEALPix pixels")
+    
+    # Get centers for all pixels at once
+    ra_centers, dec_centers = get_pixel_centers(unique_pixels, nside=NSIDE_VIZ)
+    
+    # Create DataFrame
+    pixels_df = pd.DataFrame({
+        "pixel": unique_pixels,
+        "visits": visit_counts,
+        "ra": ra_centers,
+        "dec": dec_centers,
+    })
+    
+    # Print statistics
+    print("\nVisit count statistics:")
+    print(f"  Minimum: {pixels_df['visits'].min():,}")
+    print(f"  Maximum: {pixels_df['visits'].max():,}")
+    print(f"  Mean: {pixels_df['visits'].mean():.1f}")
+    print(f"  Median: {pixels_df['visits'].median():.1f}")
+    
+    # Print distribution for key thresholds
+    print("\nPixels by visit count:")
+    thresholds = [1, 2, 5, 7, 10, 15, 20, 25, 30, 50, 80, 100, 150]
+    for i, threshold in enumerate(thresholds):
+        count = (pixels_df["visits"] >= threshold).sum()
+        print(f"  Above {threshold:3d} visits: {count:6,} pixels")
+    
+    # Create main plot
+    plot_visit_density(pixels_df, output_filename)
+    print(f"Visit density visualization saved to {output_filename}")
+    
+    # Create histogram for 1-150 visits range
+    plt.figure(figsize=(12, 6))
+    plt.hist(pixels_df[pixels_df["visits"] <= 150]["visits"], 
+             bins=50, edgecolor='black')
+    plt.xlabel("Number of visits")
+    plt.ylabel("Number of pixels")
+    plt.title("Visit Count Distribution (1-150 visits)")
+    plt.grid(True, alpha=0.3)
+    plt.savefig("visit_histogram_detail.png", dpi=300, bbox_inches='tight')
+    plt.close()
+    print("Visit count histogram saved to visit_histogram_detail.png")

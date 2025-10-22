@@ -17,6 +17,8 @@ and with others whose patches lie close by.
 This is your cosmic neighborhood: a way to stay curious, stay connected,
 and find meaning in the rhythms of the sky.
 
+**Note: Nothing in this repository reflects any official policies, assignments,
+or positions of the Rubin project or any other organization. This is just for fun!**
 
 This repository provides a simple tool that can be used to assign people to patches of the sky.
 The tool is initially configured to cover just the areas of the sky that the

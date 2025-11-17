@@ -219,6 +219,23 @@ make clean
 - Solar ephemeris: [Astropy](https://www.astropy.org/) library
 - Calendar conversions: [convertdate](https://github.com/fitnr/convertdate) library
 
+## Additional Documentation
+
+### Voting System Analysis
+
+This repository includes an analysis of End-to-End Verifiable (E2E-V) voting systems and their threat models, developed in response to questions about cryptographic verification, distributed trust, and privacy-preserving systems. While not directly related to cosmic neighborhoods, the analysis explores interesting parallels between voting system verification and the trust/fairness principles used in deterministic assignment algorithms.
+
+See:
+- [VOTING_ANALYSIS_README.md](./VOTING_ANALYSIS_README.md) - Overview and summary
+- [voting_system_analysis.md](./voting_system_analysis.md) - Full analysis
+
+Key topics covered:
+- Receipt-freeness and coercion resistance
+- Cast-as-intended verification with compromised clients
+- Comparison of systems: VoteSecure, Helios, Belenios, Swiss Post, 7th Estate
+- Novel approaches like decoy ballots and hybrid paper/digital systems
+- Parallels with cosmic neighborhood trust and verification principles
+
 ## License
 
 MIT

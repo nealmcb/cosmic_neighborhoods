@@ -1,5 +1,12 @@
 # TODO List
 
+## Voting System Analysis (Completed)
+- [x] Review VoteSecure Issue #2 questions about E2E-V voting systems
+- [x] Analyze 7th Estate (Grassroots Democracy) voting system
+- [x] Compare threat models: VoteSecure, Helios, Belenios, Swiss Post, 7th Estate
+- [x] Document findings in `voting_system_analysis.md`
+- [x] Identify parallels between voting system verification and cosmic neighborhood trust/fairness
+
 ## Footprint Analysis
 - [ ] Create visualization of footprint visit density, focusing on northern region sparseness (and ensure it handles log scale to capture both rare pixels and DDFs)
 - [ ] Produce the footprint density visualization in a FITS format or similar, so it can be opened in Aladin.

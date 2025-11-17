@@ -24,8 +24,6 @@ FIELD_HEIGHT = 3.5  # degrees, full height
 FIELD_DIAGONAL = np.sqrt(FIELD_WIDTH**2 + FIELD_HEIGHT**2)  # For initial cone search
 
 import healpy as hp
-from healpy import HEALPix, ICRS, GeocentricTrueEcliptic
-from astropy.coordinates import SkyCoord
 
 
 def extract_boundary(db_path: str | Path) -> Dict[str, np.ndarray]:
